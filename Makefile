@@ -1,53 +1,52 @@
-VENV        = .venv
-PYTHON      = $(VENV)/bin/python
-PIP         = $(VENV)/bin/pip
-MAIN        = call_me_maybe.py
-
-EXCLUDE     = .venv,build,dist,__pycache__
-FLAKE_FLAGS = --exclude=$(EXCLUDE) --extend-ignore=W191,E101
-MYPY_FLAGS  = --exclude '(\.venv|build|dist)' \
-              --warn-return-any \
-              --warn-unused-ignores \
-              --ignore-missing-imports \
-              --disallow-untyped-defs \
-              --check-untyped-defs
+# ---- Configuration --------------------------------------------------------
+PKG        = src
+# Flags exigidos por el enunciado para la regla `lint`.
+MYPY_FLAGS = --warn-return-any \
+             --warn-unused-ignores \
+             --ignore-missing-imports \
+             --disallow-untyped-defs \
+             --check-untyped-defs
 
 .DEFAULT_GOAL := run
 .PHONY: install run debug lint lint-strict clean fclean
 
-$(VENV)/bin/python:
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -q flake8 mypy
-	@echo "venv ready. Activate with: source $(VENV)/bin/activate"
+# ---- Environment ----------------------------------------------------------
+# El corrector y la moulinette solo ejecutan `uv sync`.
+install:
+	uv sync
 
-install: $(VENV)/bin/python
-	$(PIP) install --upgrade pip
-	# or: $(PIP) install -r requirements.txt
+# ---- Execution ------------------------------------------------------------
+# Uso: make run
+#      make run ARGS="--input data/input/tests.json --output data/output/out.json"
+run:
+	uv run python -m $(PKG) $(ARGS)
 
-run: $(VENV)/bin/python
-	$(PYTHON) $(MAIN)
+# Ejecuta el paquete bajo el depurador pdb (Python 3.10+ admite `pdb -m modulo`).
+debug:
+	uv run python -m pdb -m $(PKG)
 
-debug: $(VENV)/bin/python
-	$(PYTHON) -m pdb $(MAIN)
-
-lint: $(VENV)/bin/python
+# ---- Quality --------------------------------------------------------------
+# `uv run` solo garantiza que flake8/mypy se ejecuten dentro del entorno del
+# proyecto. Las exclusiones salen de .flake8 y de [tool.mypy] en pyproject.toml.
+lint:
 	@fail=0; \
-	$(VENV)/bin/flake8 $(FLAKE_FLAGS) . || fail=1; \
-	$(VENV)/bin/mypy . $(MYPY_FLAGS) || fail=1; \
+	uv run flake8 . || fail=1; \
+	uv run mypy . $(MYPY_FLAGS) || fail=1; \
 	exit $$fail
 
-lint-strict: $(VENV)/bin/python
+lint-strict:
 	@fail=0; \
-	$(VENV)/bin/flake8 $(FLAKE_FLAGS) . || fail=1; \
-	$(VENV)/bin/mypy . --exclude '(\.venv|build|dist)' --strict || fail=1; \
+	uv run flake8 . || fail=1; \
+	uv run mypy . --strict || fail=1; \
 	exit $$fail
 
+# ---- Cleanup --------------------------------------------------------------
 clean:
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type d -name ".mypy_cache" -exec rm -rf {} +
-	rm -rf build/ dist/ .coverage htmlcov/ .pytest_cache/
+	find . -type d -name "__pycache__"   -not -path "./.venv/*" -exec rm -rf {} +
+	find . -type d -name ".mypy_cache"   -not -path "./.venv/*" -exec rm -rf {} +
+	find . -type d -name ".pytest_cache" -not -path "./.venv/*" -exec rm -rf {} +
+	find . -type f -name "*.py[co]"      -not -path "./.venv/*" -delete
+	rm -rf build/ dist/ .coverage htmlcov/
 
 fclean: clean
-	rm -rf $(VENV)
+	rm -rf .venv

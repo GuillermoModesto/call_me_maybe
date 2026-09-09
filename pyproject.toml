@@ -1,0 +1,53 @@
+[project]
+name = "call-me-maybe"
+version = "0.1.0"
+description = "Constrained decoding for function calling with a small LLM"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.6",
+
+    # --- llm_sdk transitive dependencies -----------------------------------
+    # El paquete llm_sdk que te dan necesita sus propias librerías (casi con
+    # seguridad torch + transformers/tokenizers) para cargar Qwen3-0.6B.
+    # Tu CÓDIGO no puede importarlas (están prohibidas), pero deben estar
+    # INSTALADAS para que llm_sdk funcione y `uv sync` sea suficiente.
+    #
+    # PASO: abre la carpeta llm_sdk y mira sus imports (o su
+    # requirements.txt / pyproject si lo trae) y descomenta/ajusta aquí.
+    # Ejemplo probable:
+    # "torch>=2.2",
+    # "transformers>=4.40",
+]
+
+[dependency-groups]
+# `uv sync` instala este grupo por defecto.
+dev = [
+    "flake8>=7.0",
+    "mypy>=1.9",
+    "pytest>=8.0",
+]
+
+[tool.uv]
+# Es una aplicación, no una librería: uv no intenta empaquetarla ni instalarla
+# como paquete, así que no hace falta build-system.
+package = false
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+exclude = ['(^|/)(\.venv|build|dist|llm_sdk)(/|$)']
+
+# llm_sdk es código de terceros: no lo analizamos con mypy.
+[[tool.mypy.overrides]]
+module = "llm_sdk.*"
+ignore_errors = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
