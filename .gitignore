@@ -1,5 +1,5 @@
-# Maps
-maps/
+# Program output (must NOT be committed; generated during peer review)
+data/output/
 
 # Python artifacts
 __pycache__/
