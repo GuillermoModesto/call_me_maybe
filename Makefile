@@ -41,6 +41,7 @@ lint-strict:
 	exit $$fail
 
 # ---- Cleanup --------------------------------------------------------------
+# OJO: NO borrar *.lock aquí — uv.lock debe permanecer y va commiteado.
 clean:
 	find . -type d -name "__pycache__"   -not -path "./.venv/*" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache"   -not -path "./.venv/*" -exec rm -rf {} +

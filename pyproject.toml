@@ -7,18 +7,10 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
     "pydantic>=2.6",
-
-    # --- llm_sdk transitive dependencies -----------------------------------
-    # El paquete llm_sdk que te dan necesita sus propias librerías (casi con
-    # seguridad torch + transformers/tokenizers) para cargar Qwen3-0.6B.
-    # Tu CÓDIGO no puede importarlas (están prohibidas), pero deben estar
-    # INSTALADAS para que llm_sdk funcione y `uv sync` sea suficiente.
-    #
-    # PASO: abre la carpeta llm_sdk y mira sus imports (o su
-    # requirements.txt / pyproject si lo trae) y descomenta/ajusta aquí.
-    # Ejemplo probable:
-    # "torch>=2.2",
-    # "transformers>=4.40",
+    # llm_sdk se instala desde su carpeta local (ver [tool.uv.sources] abajo).
+    # torch / transformers / huggingface-hub llegan transitivamente desde él,
+    # así que no hace falta listarlos aquí.
+    "llm-sdk",
 ]
 
 [dependency-groups]
@@ -30,9 +22,13 @@ dev = [
 ]
 
 [tool.uv]
-# Es una aplicación, no una librería: uv no intenta empaquetarla ni instalarla
-# como paquete, así que no hace falta build-system.
+# Nuestro proyecto es una aplicación, no una librería: uv no lo empaqueta.
 package = false
+
+[tool.uv.sources]
+# Instala el paquete llm_sdk desde su carpeta (que trae su propio pyproject.toml
+# con build backend). Ajusta la ruta si la carpeta no está en la raíz del repo.
+llm-sdk = { path = "llm_sdk" }
 
 [tool.mypy]
 python_version = "3.10"
@@ -41,13 +37,16 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+# No descubrir ni chequear el cuerpo de llm_sdk (código de terceros).
 exclude = ['(^|/)(\.venv|build|dist|llm_sdk)(/|$)']
 
-# llm_sdk es código de terceros: no lo analizamos con mypy.
+# Al importarlo desde src, tratar llm_sdk como módulo opaco: mypy no mira su
+# interior ni se queja de sus atributos. Cubre el paquete raíz Y los submódulos.
 [[tool.mypy.overrides]]
-module = "llm_sdk.*"
-ignore_errors = true
+module = ["llm_sdk", "llm_sdk.*"]
+follow_imports = "skip"
 ignore_missing_imports = true
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
