@@ -1,2 +1,2 @@
 [flake8]
-extend-exclude = .venv,build,dist,llm_sdk,data
+exclude = .venv,.git,__pycache__,build,dist,llm_sdk,data

@@ -7,14 +7,14 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
     "pydantic>=2.6",
-    # llm_sdk se instala desde su carpeta local (ver [tool.uv.sources] abajo).
-    # torch / transformers / huggingface-hub llegan transitivamente desde él,
-    # así que no hace falta listarlos aquí.
+    # llm_sdk is installed from its local folder (see [tool.uv.sources] below).
+    # torch / transformers / huggingface-hub come in transitively from it,
+    # so there is no need to list them here.
     "llm-sdk",
 ]
 
 [dependency-groups]
-# `uv sync` instala este grupo por defecto.
+# `uv sync` installs this group by default.
 dev = [
     "flake8>=7.0",
     "mypy>=1.9",
@@ -22,12 +22,13 @@ dev = [
 ]
 
 [tool.uv]
-# Nuestro proyecto es una aplicación, no una librería: uv no lo empaqueta.
+# Our project is an application, not a library: uv does not package it.
 package = false
 
 [tool.uv.sources]
-# Instala el paquete llm_sdk desde su carpeta (que trae su propio pyproject.toml
-# con build backend). Ajusta la ruta si la carpeta no está en la raíz del repo.
+# Install the llm_sdk package from its folder (which ships its own
+# pyproject.toml with a build backend). Adjust the path if the folder is not
+# at the repository root.
 llm-sdk = { path = "llm_sdk" }
 
 [tool.mypy]
@@ -37,11 +38,12 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 disallow_untyped_defs = true
 check_untyped_defs = true
-# No descubrir ni chequear el cuerpo de llm_sdk (código de terceros).
+# Do not discover or check the body of llm_sdk (third-party code).
 exclude = ['(^|/)(\.venv|build|dist|llm_sdk)(/|$)']
 
-# Al importarlo desde src, tratar llm_sdk como módulo opaco: mypy no mira su
-# interior ni se queja de sus atributos. Cubre el paquete raíz Y los submódulos.
+# When imported from src, treat llm_sdk as an opaque module: mypy neither looks
+# inside it nor complains about its attributes. Covers the root package AND the
+# submodules.
 [[tool.mypy.overrides]]
 module = ["llm_sdk", "llm_sdk.*"]
 follow_imports = "skip"
