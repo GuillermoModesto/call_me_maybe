@@ -21,7 +21,7 @@ class ParamSpec(BaseModel):
 
 
 class FunctionDefinition(BaseModel):
-    """Same as before, but with its own parameters. A callable function: name,
+    """A callable function: name,
       description, typed parameters and return type."""
     model_config = ConfigDict(extra="forbid")
     name: str
@@ -36,3 +36,9 @@ class FunctionCallResult(BaseModel):
     prompt: str
     name: str
     parameters: dict[str, Any]
+
+
+class PromptEntry(BaseModel):
+    """A single entry of the test-prompts file: {"prompt": "..."}."""
+    model_config = ConfigDict(extra="forbid")
+    prompt: str
