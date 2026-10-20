@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
 from .models import FunctionDefinition, PromptEntry
-
-from typing import Any
 
 
 class InputError(Exception):
@@ -30,15 +29,16 @@ def load_function_definitions(path: Path) -> list[FunctionDefinition]:
         raise InputError(f"Invalid input structure in {path}: {e}")
 
 
-def load_prompts(path: Path) -> list[PromptEntry]:
+def load_prompts(path: Path) -> list[str]:
+    """Load, validate and return the list of prompt strings."""
     raw_data = _read_json(path)
 
     adapter = TypeAdapter(list[PromptEntry])
-    entries = adapter.validate_python(raw_data)
     try:
-        return [entry.prompt for entry in entries]
+        entries = adapter.validate_python(raw_data)
     except ValidationError as e:
         raise InputError(f"Invalid structure in {path}: {e}")
+    return [entry.prompt for entry in entries]
 
 
 def _read_json(path: Path) -> Any:
