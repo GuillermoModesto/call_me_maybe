@@ -114,19 +114,23 @@ submission if desired.)*
 ### Phase 1 — I/O plumbing and data models *(in progress)*
 
 - **Done — `src/models.py`.** Defined `ParamType` (enum), `ParamSpec`,
-  `FunctionDefinition` and `FunctionCallResult`. Input models carry
-  `extra="forbid"`; the output model declares exactly the three required keys.
-  Passes `make lint` (flake8 clean, mypy "Success").
+  `FunctionDefinition`, `FunctionCallResult` and `PromptEntry`. Input models
+  carry `extra="forbid"`; the output model declares exactly the three required
+  keys. Passes `make lint`.
   - *Why:* lock down the exact shape of every input/output object in one place,
     so validation is automatic and the rest of the code can trust the data.
-- **Next — `src/models.py`:** add a small `PromptEntry` model (`prompt: str`,
-  `extra="forbid"`) to validate the test-prompts file strictly.
-- **Next — `src/loaders.py`:** custom `InputError` + `load_function_definitions`
-  and `load_prompts`, each handling the three failure points (missing file,
-  invalid JSON, schema validation) and raising `InputError` with a clear
-  message.
+- **Done — `src/loaders.py`.** Custom `InputError`, a private `_read_json`
+  helper (open + parse, raising `InputError` on missing file / invalid JSON),
+  and `load_function_definitions` / `load_prompts`, which validate the parsed
+  data with a pydantic `TypeAdapter` and translate any `ValidationError` into
+  `InputError`. Verified by hand: valid file loads and validates; a missing
+  file raises `InputError` with a clear message (no raw traceback).
+  - *Why / how:* the loader *detects and describes* every input problem; the
+    entry point will *decide the policy* (print, exit non-zero). Exceptions
+    propagate on their own, so only the validation step re-wraps its error —
+    `_read_json`'s `InputError` just bubbles up untouched.
 - **Next — `src/writer.py`:** write a `list[FunctionCallResult]` to JSON
-  (create the output dir, no extra keys, `ensure_ascii=False`).
+  (create the output dir, `model_dump()` so no extra keys, `ensure_ascii=False`).
 - **Next — `src/__main__.py`:** wire argument parsing + a *fake* generator to
   prove the whole input → output flow before touching the LLM.
 
