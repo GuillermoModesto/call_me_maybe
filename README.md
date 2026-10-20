@@ -111,7 +111,7 @@ A running, chronological record of progress so the project can be picked up
 again after a break. Most recent first. *(Working aid; trim before final
 submission if desired.)*
 
-### Phase 1 — I/O plumbing and data models *(in progress)*
+### Phase 1 — I/O plumbing and data models *(done)*
 
 - **Done — `src/models.py`.** Defined `ParamType` (enum), `ParamSpec`,
   `FunctionDefinition`, `FunctionCallResult` and `PromptEntry`. Input models
@@ -129,10 +129,24 @@ submission if desired.)*
     entry point will *decide the policy* (print, exit non-zero). Exceptions
     propagate on their own, so only the validation step re-wraps its error —
     `_read_json`'s `InputError` just bubbles up untouched.
-- **Next — `src/writer.py`:** write a `list[FunctionCallResult]` to JSON
-  (create the output dir, `model_dump()` so no extra keys, `ensure_ascii=False`).
-- **Next — `src/__main__.py`:** wire argument parsing + a *fake* generator to
-  prove the whole input → output flow before touching the LLM.
+- **Done — `src/writer.py`.** `write_results` creates the output directory,
+  dumps each model with `model_dump()` (exactly three keys) and writes the JSON
+  with `indent=2, ensure_ascii=False`.
+- **Done — `src/__main__.py`.** `argparse` for `--functions` / `--input` /
+  `--output` (each `type=Path`, with defaults), a *fake* generator
+  (`fn_placeholder`) standing in for the real engine, and a `main` that loads,
+  generates one result per prompt, and writes the output. The single
+  `try/except InputError` here prints a clean message and exits non-zero.
+  - *Result:* `make run` writes 11 placeholder results end to end; a missing
+    input prints the error and exits 1 — the whole I/O pipeline is trusted
+    before any LLM code exists.
+
+### Phase 2 — vocabulary and basic generation *(next)*
+
+- Load the vocab, build the `token_id <-> string` maps, and implement an
+  unconstrained greedy generation loop (argmax → append → feed back) to
+  confirm tokenization is understood. Watch for Qwen's byte-level BPE markers
+  (e.g. `Ġ` for spaces) and the chat template / special tokens.
 
 ### Phase 0 — scaffolding and environment *(done)*
 
