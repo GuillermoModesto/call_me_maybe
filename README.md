@@ -141,7 +141,7 @@ submission if desired.)*
     input prints the error and exits 1 — the whole I/O pipeline is trusted
     before any LLM code exists.
 
-### Phase 2 — vocabulary and basic generation *(in progress)*
+### Phase 2 — vocabulary and basic generation *(done)*
 
 - **Done — `src/vocab.py`.** A `Vocabulary` class loads `vocab.json` into
   `token_to_id` and the inverse `id_to_token`, and builds a `byte_decoder`
@@ -154,9 +154,24 @@ submission if desired.)*
   - *Note:* `vocab.json` has 151,643 entries but the model emits 151,936
     logits; the extra ~293 are special tokens (`<|im_start|>`, `<|im_end|>`,
     …) and padding slots with no entry in the vocab map.
-- **Next — `src/generator.py`:** an unconstrained greedy loop (get logits →
-  argmax → append → feed back) to confirm the token-by-token flow before
-  masking anything.
+- **Done — `src/generator.py`.** `greedy_generate` encodes the prompt, then
+  loops `max_new_tokens` times: get logits → `argmax` → append → feed back.
+  Verified: "The capital of France is" → " Paris. The capital of Italy is
+  Rome. The". Confirms the token-by-token flow that constrained decoding will
+  intercept (mask logits between "get" and "argmax").
+  - *Note:* this loop is scaffolding to understand generation; the real engine
+    (Phase 3+) generates in a controlled, field-by-field way, so no EOS-stop
+    logic was added here.
+
+### Phase 3 — constrained decoding engine *(next, the core)*
+
+- `engine.py`: the decode loop that asks for logits, sets illegal tokens to
+  `-inf`, takes the argmax, and advances a constraint state.
+- `name_selector.py`: a trie over the allowed function names, so the model
+  can only ever spell a defined name.
+- `value_types.py`: a small DFA per type (`number` / `string` / `boolean`) for
+  the argument values, generated field by field with fixed structural
+  scaffolding around them.
 
 ### Phase 0 — scaffolding and environment *(done)*
 
