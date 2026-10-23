@@ -141,12 +141,22 @@ submission if desired.)*
     input prints the error and exits 1 — the whole I/O pipeline is trusted
     before any LLM code exists.
 
-### Phase 2 — vocabulary and basic generation *(next)*
+### Phase 2 — vocabulary and basic generation *(in progress)*
 
-- Load the vocab, build the `token_id <-> string` maps, and implement an
-  unconstrained greedy generation loop (argmax → append → feed back) to
-  confirm tokenization is understood. Watch for Qwen's byte-level BPE markers
-  (e.g. `Ġ` for spaces) and the chat template / special tokens.
+- **Done — `src/vocab.py`.** A `Vocabulary` class loads `vocab.json` into
+  `token_to_id` and the inverse `id_to_token`, and builds a `byte_decoder`
+  (the inverse of GPT-2's `bytes_to_unicode`). `token_text(id)` returns a
+  token's real text, undoing the byte-level BPE encoding (e.g. `Ġ` → space,
+  `Ċ` → newline). Verified: ids 912/279/14990/198 decode to `' add'`,
+  `' the'`, `'hello'`, `'\n'`.
+  - *Why:* constrained decoding needs to reason about what text each candidate
+    token represents, so a reliable id → real-text map is the foundation.
+  - *Note:* `vocab.json` has 151,643 entries but the model emits 151,936
+    logits; the extra ~293 are special tokens (`<|im_start|>`, `<|im_end|>`,
+    …) and padding slots with no entry in the vocab map.
+- **Next — `src/generator.py`:** an unconstrained greedy loop (get logits →
+  argmax → append → feed back) to confirm the token-by-token flow before
+  masking anything.
 
 ### Phase 0 — scaffolding and environment *(done)*
 
