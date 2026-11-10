@@ -34,7 +34,11 @@ class Vocabulary:
         }
         byte_encoder = bytes_to_unicode()
         self.byte_decoder: dict[str, int] = {
-            ch: b for b, ch in byte_encoder.items()
+                    ch: b for b, ch in byte_encoder.items()
+                }
+        self.text_to_id: dict[str, int] = {
+            self.token_text(token_id): token_id
+            for token_id in self.id_to_token
         }
 
     def token_text(self, token_id: int) -> str:

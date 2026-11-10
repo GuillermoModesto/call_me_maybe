@@ -163,15 +163,24 @@ submission if desired.)*
     (Phase 3+) generates in a controlled, field-by-field way, so no EOS-stop
     logic was added here.
 
-### Phase 3 — constrained decoding engine *(next, the core)*
+### Phase 3 — constrained decoding engine *(in progress, the core)*
 
-- `engine.py`: the decode loop that asks for logits, sets illegal tokens to
-  `-inf`, takes the argmax, and advances a constraint state.
-- `name_selector.py`: a trie over the allowed function names, so the model
-  can only ever spell a defined name.
-- `value_types.py`: a small DFA per type (`number` / `string` / `boolean`) for
-  the argument values, generated field by field with fixed structural
-  scaffolding around them.
+- **Done — `src/engine.py` (masking primitive).** `pick_allowed(logits,
+  allowed_ids)` returns the id of the highest-logit token *among the allowed
+  set*, by scanning only the allowed ids (not copying the 151,936-long logit
+  array). Verified it forces the choice into any subset. This is the brick the
+  whole engine stands on: get logits → `pick_allowed` → append.
+- **Done — `src/name_selector.py`.** `NameSelector.allowed_token_ids(prefix)`
+  returns every token id whose real text keeps `prefix` a valid start of some
+  function name (by scanning each name's remaining suffix, not the whole
+  vocab). An empty result signals the name is complete. Needed a new
+  `Vocabulary.text_to_id` map (real text → id). Verified: `''` → `f`/`fn`;
+  `'fn_g'` → only the `get`/`greet` branches; `'fn_greet'` → `[]`.
+  - *Guarantee:* every single character is its own token, so a valid name can
+    always be completed one char at a time — the constraint never dead-ends.
+- **Next — `src/value_types.py`:** a small DFA per type (`number` / `string` /
+  `boolean`) for the argument values, generated field by field with fixed
+  structural scaffolding around them.
 
 ### Phase 0 — scaffolding and environment *(done)*
 
