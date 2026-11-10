@@ -178,6 +178,15 @@ submission if desired.)*
   `'fn_g'` → only the `get`/`greet` branches; `'fn_greet'` → `[]`.
   - *Guarantee:* every single character is its own token, so a valid name can
     always be completed one char at a time — the constraint never dead-ends.
+- **Done — name selection end to end (`select_function_name` in
+  `engine.py`).** Combines model + trie + mask: loop = ask the trie for the
+  allowed ids → `pick_allowed` on the logits → append → stop when the trie
+  returns the empty set (name complete). Verified on real prompts: "Greet
+  shrek" → `fn_greet`, "What is the sum of 2 and 3?" → `fn_add_numbers`,
+  "Reverse the string hello" → `fn_reverse_string`, "square root of 16" →
+  `fn_get_square_root`. The output is *always* a defined name by construction;
+  the model only steers which one.
+
 - **Next — `src/value_types.py`:** a small DFA per type (`number` / `string` /
   `boolean`) for the argument values, generated field by field with fixed
   structural scaffolding around them.
