@@ -1,5 +1,6 @@
 """Per-type character-level constraints for argument values"""
 import string as _string
+from typing import Protocol
 
 DIGITS = set("0123456789")
 STRING_CHARS = (
@@ -53,3 +54,11 @@ class StringType:
     def is_complete(self, value: str) -> bool:
         """A string content of any length (including empty) can be closed."""
         return True
+
+
+class ValueType(Protocol):
+    """Common interface of a value contraint"""
+
+    def allowed_next_chars(self, value: str) -> set[str]: ...
+
+    def is_complete(self, value: str) -> bool: ...

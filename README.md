@@ -187,9 +187,23 @@ submission if desired.)*
   `fn_get_square_root`. The output is *always* a defined name by construction;
   the model only steers which one.
 
-- **Next — `src/value_types.py`:** a small DFA per type (`number` / `string` /
-  `boolean`) for the argument values, generated field by field with fixed
-  structural scaffolding around them.
+- **Done — `src/value_types.py`.** Three character-level constraints with a
+  common interface — `allowed_next_chars(value)` and `is_complete(value)`:
+  `NumberType` (`-?[0-9]+(.[0-9]+)?`), `BooleanType` (a two-literal trie over
+  `true`/`false`), `StringType` (any printable char except `"` and `\`, always
+  completable). Values are generated char by char (every char is its own
+  token, so the set is always reachable). The value's terminator (comma,
+  brace, closing quote) is the engine's job, not the type's.
+
+- **Done — `generate_value` (`engine.py`).** Generates one value char by char:
+  allowed = `allowed_next_chars` ∪ (terminators if `is_complete`); the model
+  picks a terminator to stop (we don't append it — the caller emits the
+  structure). A `max_len` guard prevents runaway values. Verified in isolation:
+  a valid number and a (context-free, so long) valid string, both terminating.
+
+- **Next — argument filling (`engine.py`):** emit the structural scaffolding
+  (`{`, `"key": `, `, `, `}`, quotes) ourselves and generate each value with
+  its type constraint, so the arguments object is valid by construction.
 
 ### Phase 0 — scaffolding and environment *(done)*
 
