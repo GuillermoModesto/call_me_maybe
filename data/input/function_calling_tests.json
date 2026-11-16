@@ -1,6 +1,6 @@
 [
   {
-    "prompt": "What is the sum of 2 and 3?"
+    "prompt": "What is the sum of 6 and 3?"
   },
   {
     "prompt": "What is the sum of 265 and 345?"
@@ -9,7 +9,7 @@
     "prompt": "Greet shrek"
   },
   {
-    "prompt": "Greet john"
+    "prompt": "Greet Pepelepe"
   },
   {
     "prompt": "Reverse the string 'hello'"
@@ -27,9 +27,9 @@
     "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
   },
   {
-    "prompt": "Replace all vowels in 'Programming is fun' with asterisks"
+    "prompt": "Replace all consonants in 'Programming is fun' with asterisks"
   },
   {
-    "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
+    "prompt": "Substitute the word 'cat' with 'horse' in 'The cat sat on the mat with another cat'"
   }
 ]

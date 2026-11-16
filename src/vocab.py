@@ -1,8 +1,9 @@
-"""Vocabulary: token <-> id maps and byle-level decoding
+"""Vocabulary: token <-> id maps and byte-level decoding
 for Qwen's BPE"""
 
 import json
 from pathlib import Path
+from .value_types import STRING_CHARS
 
 
 def bytes_to_unicode() -> dict[int, str]:
@@ -36,10 +37,13 @@ class Vocabulary:
         self.byte_decoder: dict[str, int] = {
                     ch: b for b, ch in byte_encoder.items()
                 }
-        self.text_to_id: dict[str, int] = {
-            self.token_text(token_id): token_id
-            for token_id in self.id_to_token
-        }
+        self.text_to_id: dict[str, int] = {}
+        self.string_content_ids: set[int] = set()
+        for token_id in self.id_to_token:
+            text = self.token_text(token_id)
+            self.text_to_id[text] = token_id
+            if text and all(ch in STRING_CHARS for ch in text):
+                self.string_content_ids.add(token_id)
 
     def token_text(self, token_id: int) -> str:
         """Return the real text of a token id

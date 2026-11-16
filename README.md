@@ -5,214 +5,237 @@
 ## Description
 
 This project turns a small local LLM (Qwen3-0.6B, served through the provided
-`llm_sdk`) into a reliable function-calling engine using **constrained
+`llm_sdk`) into a reliable **function-calling** engine using **constrained
 decoding**. Given a set of function definitions and a list of natural-language
-prompts, the program must, for each prompt, choose the right function and fill
-its arguments, producing output that is **always structurally valid** — never
-malformed JSON, never an unknown function name, never an argument of the wrong
-type.
+prompts, the program decides, for each prompt, **which** function to call and
+**with what arguments**, and writes the result as JSON.
 
-The reliability does not come from asking the model nicely for JSON and hoping.
-It comes from intervening in the token-by-token generation: at every step we
-look at the model's logits, mask out every token that would make the output
-invalid, and only then let the model pick among the legal options. Validity is
-enforced by construction, not checked afterwards.
+The output is *always* structurally valid — never malformed JSON, never an
+unknown function name, never an argument of the wrong type. This guarantee does
+not come from asking the model for JSON and hoping; it comes from intervening in
+the generation token by token: at every step we look at the model's logits, set
+every token that would make the output invalid out of reach, and only then let
+the model pick. Validity is enforced **by construction**.
+
+Note this is function *calling*, not function *execution*: the program emits the
+call (`name` + `parameters`); it does not run the function or compute a result
+(the output schema has no result field).
 
 ## Instructions
 
 ```bash
 make install     # uv sync — creates .venv and installs everything
-make run         # uv run python -m src  (uses default input/output paths)
-make run ARGS="--input data/input/function_calling_tests.json \
+make run         # uv run python -m src  (default input/output paths)
+make run ARGS="--functions data/input/functions_definition.json \
+               --input data/input/function_calling_tests.json \
                --output data/output/function_calling_results.json"
 make lint        # flake8 + mypy with the required flags
 make clean       # remove caches and build artifacts (keeps uv.lock)
 make fclean      # clean + remove .venv
 ```
 
-Inputs live in `data/input/` (`functions_definition.json` and
-`function_calling_tests.json`). Output is written to `data/output/`, which is
+Inputs live in `data/input/`; output is written to `data/output/`, which is
 generated at runtime and is **not** committed.
 
 ## Algorithm explanation
 
-*(Planned — not yet implemented. Kept here so the intended approach is on
-record.)*
+Generation is token by token. At each step `get_logits_from_input_ids` returns
+one logit (a raw score) per vocabulary token. Normal generation takes the
+highest (argmax). Constrained decoding inserts one step in between:
 
-1. Generation is token by token. At each step `get_logits_from_input_ids`
-   returns one logit per vocabulary token (151,936 of them).
-2. Before choosing, set the logit of every *illegal* token to `-inf`, so the
-   argmax can never pick it.
-3. "Legal" is defined by a small state machine describing what a valid output
-   looks like at this point.
-4. Two sub-problems:
-   - **Choosing the function**: the name must be exactly one of the defined
-     ones → modelled with a *trie* over the allowed names. The LLM still
-     chooses (by its logits) among legal continuations, but cannot invent a
-     name.
-   - **Filling the arguments**: each value must match its type
-     (`number` / `string` / `boolean`) → a small DFA per type, generated field
-     by field while the structural scaffolding (`{`, `"a": `, `, `, `}`) is
-     emitted by us.
+```
+get logits  ->  keep only the ALLOWED tokens  ->  argmax among them  ->  append
+```
+
+Because the argmax can only pick an allowed token, an invalid output is
+impossible. The "allowed" set is produced by a small constraint that depends on
+what has been generated so far.
+
+**1. Choosing the function (prefix trie).** The name must be exactly one of the
+defined ones. `NameSelector.allowed_token_ids(prefix)` returns every token whose
+text keeps the generated prefix a valid start of some function name (scanning
+each name's remaining suffix). An empty result means the name is complete. The
+model still *chooses* which name (by its logits); it just cannot spell one that
+does not exist. A key guarantee: every single character is its own token, so a
+name can always be completed one character at a time — the constraint never
+dead-ends.
+
+**2. Filling the arguments (fixed scaffolding + per-type values).** Knowing the
+function, we know its parameters and their types. The structural parts (`{`,
+`"key": `, `, `, `}`, the string quotes) are emitted by *us*; only the values
+are generated by the model, each under its type's constraint:
+
+- `number` (`-?[0-9]+(.[0-9]+)?`) and `boolean` (`true`/`false`) are generated
+  character by character with a tiny state machine (`allowed_next_chars` +
+  `is_complete`). When the value is complete, the model may pick a terminator
+  (comma or closing brace) to stop — so the model decides the value's length.
+- `string` is generated allowing any multi-character token whose text is made
+  only of valid string characters (no `"` or `\`), plus the closing quote.
+  (Restricting strings to single characters was a bug — see Challenges.)
+
+This field-by-field approach with fixed scaffolding is far more reliable on a
+0.6B model than attempting a full JSON grammar at once, and it keeps the output
+valid by construction.
 
 ## Design decisions
 
 - **`uv` with `llm_sdk` as a local path dependency.** The SDK ships as a full
-  installable project (its own `pyproject.toml` + build backend), so it is
-  declared under `[tool.uv.sources]` as `llm-sdk = { path = "llm_sdk" }`. This
-  makes `uv sync` alone sufficient for the reviewer, and `torch` /
-  `transformers` / `huggingface-hub` come in transitively — our code never
-  imports them directly.
-- **Pydantic models as the single source of truth for shapes** (`src/models.py`).
-  Input models use `extra="forbid"` so any unexpected key in an input file is a
-  hard error, not a silent drop. The output model has no `forbid`: we build it
-  ourselves, and declaring exactly three fields (`prompt`, `name`,
-  `parameters`) already guarantees the required output schema.
-- **`ParamType` as a `str`-backed `Enum`.** The `type` field only accepts
-  `number` / `string` / `boolean`; anything else fails validation for free.
-- **Input/output isolated from logic** (planned). A dedicated `loaders.py`
-  raises a custom `InputError` on any problem (missing file, invalid JSON,
-  failed validation); the entry point decides the policy (print a clear
-  message, exit non-zero). The subject requires the program to never crash with
-  a traceback.
+  installable project, so it is declared under `[tool.uv.sources]` as
+  `llm-sdk = { path = "llm_sdk" }`; `uv sync` alone suffices and `torch` /
+  `transformers` arrive transitively — our own code never imports them.
+- **Pydantic as the single source of truth for shapes.** Input models use
+  `extra="forbid"` so any unexpected key is a hard error; the output model
+  declares exactly `prompt` / `name` / `parameters`, which guarantees the
+  required schema on serialization.
+- **I/O isolated from logic.** `loaders.py` raises a custom `InputError` on any
+  problem (missing file, invalid JSON, failed validation); the entry point
+  decides the policy (print a clear message, exit non-zero). The program never
+  crashes with a traceback.
+- **Masking separated from constraints.** `pick_allowed` is a dumb, reusable
+  primitive; the intelligence (trie, type machines) lives in the constraints.
+- **The model chooses, we guarantee validity.** The model picks the function and
+  the length/content of values; the engine guarantees structure and types. This
+  respects "the function is chosen by the LLM, not by heuristics".
+- **Char-by-char for numbers/booleans, multi-char tokens for strings.** Numbers
+  tokenize digit by digit naturally; words do not, so strings need multi-char
+  tokens.
 
 ## Performance analysis
 
-*(TODO — once the engine runs: accuracy on the test prompts, per-prompt latency,
-and the effect of caching the vocab maps.)*
+On the 11 provided test prompts (Qwen3-0.6B, CPU):
+
+- **Function selection: 11/11 correct.**
+- **Numbers: exact** (`2`/`3`, `265`/`345`, `16`, `144`).
+- **Short strings: exact** (`shrek`, `john`, `hello`, `world`, `Programming is
+  fun`, the quoted source strings, `NUMBERS`).
+- **Regex: bounded and valid, not always semantically ideal** (e.g. `cat.*`
+  where `cat` was meant). Free-form regex is the single hardest value for a
+  0.6B model; the constraint guarantees a *valid* string, not a *correct* regex.
+
+**Reliability:** structural validity is 100% by construction regardless of the
+model — the output is always valid JSON with a defined function name and
+correctly typed arguments.
+
+**Speed:** generation is on CPU, one full forward pass per generated token.
+Name selection is a handful of tokens; argument filling is char-by-char for
+numbers/booleans and token-by-token for strings, so a prompt takes from a few
+seconds to about a minute. The vocabulary maps (`id_to_token`, `text_to_id`,
+`string_content_ids`) are built once at startup, so the per-step cost is only
+the model call plus a small allowed-set computation.
 
 ## Challenges faced
 
-*(TODO — filled as they come up. So far: resolving the nested `llm_sdk` package
-layout, and stopping flake8 from recursing into `.venv`.)*
+- **Nested `llm_sdk` package.** The provided package is a project wrapping the
+  real package (`llm_sdk/llm_sdk/__init__.py`), which caused an `import`
+  "unknown location". Solved by installing it as a local path dependency.
+- **flake8 recursing into `.venv`.** flake8 crashed parsing a dependency; fixed
+  by excluding `.venv` and pointing lint at `src`.
+- **`Vocabulary.__init__` ordering.** `text_to_id` uses `token_text`, which
+  needs `byte_decoder`; building them out of order raised `AttributeError`. The
+  rule: a line may only use attributes already created above it.
+- **Strings closing after one character (design bug, not the model).** Values
+  were generated allowing only single-character tokens, which masked the
+  multi-character word tokens the model actually wanted; among the allowed
+  single characters the closing quote outranked every letter, so strings came
+  out one char long. Fixed by allowing multi-character content tokens for
+  strings (`string_content_ids` + `generate_string`). Lesson: over-restricting
+  distorts the model's distribution; the constraint must forbid the invalid, not
+  the model's natural tools for the valid.
+- **Regex runaway loops.** The free-form regex value looped to `max_len`
+  (`cat.*cat.*cat...`). Added an anti-repetition heuristic (`_looping_period`)
+  that detects a short unit repeated several times, trims the repeated tail and
+  closes. Two runaway modes exist: repetition (caught) and non-repeating
+  drift (bounded by `max_len`).
 
 ## Testing strategy
 
-*(Planned.)* Each layer is validated before the next is built. The I/O layer is
-exercised end to end with a *fake* generator returning a fixed result, so the
-plumbing is trusted before any LLM logic exists. Unit tests target the loaders
-(missing file, invalid JSON, schema violations) and, later, the trie and the
-type DFAs.
+The project was validated **layer by layer**, trusting each layer before
+building the next:
+
+- **I/O layer** exercised end to end with a fake generator (fixed result) before
+  any LLM code existed, including the error paths (missing file, invalid JSON,
+  schema violations → clear `InputError`, exit 1, no traceback).
+- **Each engine piece tested in isolation** with small scripts: `pick_allowed`
+  forcing a subset; the trie's allowed sets for several prefixes; each type's
+  `allowed_next_chars` / `is_complete`; `generate_value` / `generate_string` on
+  single values; then `fill_arguments` and the full `process_prompt`.
+- **End-to-end run** over all 11 prompts, inspecting the output JSON for correct
+  structure, names, types and values.
+
+Planned next: formal `pytest` unit tests for the loaders, the trie and the type
+machines, plus edge cases (empty strings, large numbers, special characters).
 
 ## Example usage
 
-*(TODO — add a real run with sample output once the pipeline is complete.)*
+```
+$ make run
+[1/11] What is the sum of 2 and 3?
+...
+[11/11] Substitute the word 'cat' with 'dog' in 'The cat sat ...'
+Wrote 11 results to data/output/function_calling_results.json
+```
+
+A sample of the output (`data/output/function_calling_results.json`):
+
+```json
+[
+  { "prompt": "What is the sum of 2 and 3?",
+    "name": "fn_add_numbers",
+    "parameters": { "a": 2, "b": 3 } },
+  { "prompt": "Greet shrek",
+    "name": "fn_greet",
+    "parameters": { "name": "shrek" } },
+  { "prompt": "Reverse the string 'hello'",
+    "name": "fn_reverse_string",
+    "parameters": { "s": "hello" } }
+]
+```
 
 ## Resources
 
-*(TODO — references on constrained decoding + a note on how AI was used and for
-which parts.)*
+- Constrained / guided decoding: the general idea of masking logits to enforce a
+  grammar (as in guidance/outlines-style libraries and the "logit mask" pattern).
+- Byte-level BPE and the `bytes_to_unicode` scheme (GPT-2 tokenizer), which
+  explains the `Ġ`/`Ċ` markers in the Qwen vocabulary.
+- Qwen3-0.6B model and tokenizer (Hugging Face), accessed via the provided
+  `llm_sdk`.
+- **Use of AI:** an AI assistant (Claude) was used as a step-by-step tutor — to
+  design the architecture, explain the theory (tokens, logits, BPE, pydantic,
+  constrained decoding), review code and diagnose bugs (notably the string
+  single-character bug and the regex runaway). The implementation code was
+  written by hand following that guidance.
 
 ---
 
 ## Development log
 
-A running, chronological record of progress so the project can be picked up
-again after a break. Most recent first. *(Working aid; trim before final
+A running record of progress, newest first. *(Working aid; trim before final
 submission if desired.)*
 
-### Phase 1 — I/O plumbing and data models *(done)*
+### Phase 4 — pipeline and wiring *(done)*
+- `pipeline.py` (`process_prompt`) + real `__main__.py` (model/vocab/selector
+  built once, loop over prompts). Full run over the 11 prompts: correct
+  function on all; numbers exact; strings whole; regex bounded (anti-repetition
+  heuristic in `generate_string`). The program emits the call, does not execute
+  it. Remaining limitation: regex semantic quality (model, not code).
 
-- **Done — `src/models.py`.** Defined `ParamType` (enum), `ParamSpec`,
-  `FunctionDefinition`, `FunctionCallResult` and `PromptEntry`. Input models
-  carry `extra="forbid"`; the output model declares exactly the three required
-  keys. Passes `make lint`.
-  - *Why:* lock down the exact shape of every input/output object in one place,
-    so validation is automatic and the rest of the code can trust the data.
-- **Done — `src/loaders.py`.** Custom `InputError`, a private `_read_json`
-  helper (open + parse, raising `InputError` on missing file / invalid JSON),
-  and `load_function_definitions` / `load_prompts`, which validate the parsed
-  data with a pydantic `TypeAdapter` and translate any `ValidationError` into
-  `InputError`. Verified by hand: valid file loads and validates; a missing
-  file raises `InputError` with a clear message (no raw traceback).
-  - *Why / how:* the loader *detects and describes* every input problem; the
-    entry point will *decide the policy* (print, exit non-zero). Exceptions
-    propagate on their own, so only the validation step re-wraps its error —
-    `_read_json`'s `InputError` just bubbles up untouched.
-- **Done — `src/writer.py`.** `write_results` creates the output directory,
-  dumps each model with `model_dump()` (exactly three keys) and writes the JSON
-  with `indent=2, ensure_ascii=False`.
-- **Done — `src/__main__.py`.** `argparse` for `--functions` / `--input` /
-  `--output` (each `type=Path`, with defaults), a *fake* generator
-  (`fn_placeholder`) standing in for the real engine, and a `main` that loads,
-  generates one result per prompt, and writes the output. The single
-  `try/except InputError` here prints a clean message and exits non-zero.
-  - *Result:* `make run` writes 11 placeholder results end to end; a missing
-    input prints the error and exits 1 — the whole I/O pipeline is trusted
-    before any LLM code exists.
+### Phase 3 — constrained decoding engine *(done)*
+- `engine.py` masking primitive `pick_allowed`; `name_selector.py` prefix trie;
+  `select_function_name` (model + trie + mask) picks the right function on real
+  prompts; `value_types.py` (Number/Boolean/String + `ValueType` Protocol);
+  `generate_value` (char-by-char, model chooses length) and `generate_string`
+  (multi-char tokens); `fill_arguments` (fixed scaffolding + per-type values).
 
 ### Phase 2 — vocabulary and basic generation *(done)*
+- `vocab.py` (`Vocabulary`: token/id maps, `byte_decoder`, `token_text`,
+  `text_to_id`, `string_content_ids`); `generator.py` greedy loop to understand
+  the token-by-token flow.
 
-- **Done — `src/vocab.py`.** A `Vocabulary` class loads `vocab.json` into
-  `token_to_id` and the inverse `id_to_token`, and builds a `byte_decoder`
-  (the inverse of GPT-2's `bytes_to_unicode`). `token_text(id)` returns a
-  token's real text, undoing the byte-level BPE encoding (e.g. `Ġ` → space,
-  `Ċ` → newline). Verified: ids 912/279/14990/198 decode to `' add'`,
-  `' the'`, `'hello'`, `'\n'`.
-  - *Why:* constrained decoding needs to reason about what text each candidate
-    token represents, so a reliable id → real-text map is the foundation.
-  - *Note:* `vocab.json` has 151,643 entries but the model emits 151,936
-    logits; the extra ~293 are special tokens (`<|im_start|>`, `<|im_end|>`,
-    …) and padding slots with no entry in the vocab map.
-- **Done — `src/generator.py`.** `greedy_generate` encodes the prompt, then
-  loops `max_new_tokens` times: get logits → `argmax` → append → feed back.
-  Verified: "The capital of France is" → " Paris. The capital of Italy is
-  Rome. The". Confirms the token-by-token flow that constrained decoding will
-  intercept (mask logits between "get" and "argmax").
-  - *Note:* this loop is scaffolding to understand generation; the real engine
-    (Phase 3+) generates in a controlled, field-by-field way, so no EOS-stop
-    logic was added here.
-
-### Phase 3 — constrained decoding engine *(in progress, the core)*
-
-- **Done — `src/engine.py` (masking primitive).** `pick_allowed(logits,
-  allowed_ids)` returns the id of the highest-logit token *among the allowed
-  set*, by scanning only the allowed ids (not copying the 151,936-long logit
-  array). Verified it forces the choice into any subset. This is the brick the
-  whole engine stands on: get logits → `pick_allowed` → append.
-- **Done — `src/name_selector.py`.** `NameSelector.allowed_token_ids(prefix)`
-  returns every token id whose real text keeps `prefix` a valid start of some
-  function name (by scanning each name's remaining suffix, not the whole
-  vocab). An empty result signals the name is complete. Needed a new
-  `Vocabulary.text_to_id` map (real text → id). Verified: `''` → `f`/`fn`;
-  `'fn_g'` → only the `get`/`greet` branches; `'fn_greet'` → `[]`.
-  - *Guarantee:* every single character is its own token, so a valid name can
-    always be completed one char at a time — the constraint never dead-ends.
-- **Done — name selection end to end (`select_function_name` in
-  `engine.py`).** Combines model + trie + mask: loop = ask the trie for the
-  allowed ids → `pick_allowed` on the logits → append → stop when the trie
-  returns the empty set (name complete). Verified on real prompts: "Greet
-  shrek" → `fn_greet`, "What is the sum of 2 and 3?" → `fn_add_numbers`,
-  "Reverse the string hello" → `fn_reverse_string`, "square root of 16" →
-  `fn_get_square_root`. The output is *always* a defined name by construction;
-  the model only steers which one.
-
-- **Done — `src/value_types.py`.** Three character-level constraints with a
-  common interface — `allowed_next_chars(value)` and `is_complete(value)`:
-  `NumberType` (`-?[0-9]+(.[0-9]+)?`), `BooleanType` (a two-literal trie over
-  `true`/`false`), `StringType` (any printable char except `"` and `\`, always
-  completable). Values are generated char by char (every char is its own
-  token, so the set is always reachable). The value's terminator (comma,
-  brace, closing quote) is the engine's job, not the type's.
-
-- **Done — `generate_value` (`engine.py`).** Generates one value char by char:
-  allowed = `allowed_next_chars` ∪ (terminators if `is_complete`); the model
-  picks a terminator to stop (we don't append it — the caller emits the
-  structure). A `max_len` guard prevents runaway values. Verified in isolation:
-  a valid number and a (context-free, so long) valid string, both terminating.
-
-- **Next — argument filling (`engine.py`):** emit the structural scaffolding
-  (`{`, `"key": `, `, `, `}`, quotes) ourselves and generate each value with
-  its type constraint, so the arguments object is valid by construction.
+### Phase 1 — I/O plumbing and data models *(done)*
+- `models.py` (pydantic, `extra="forbid"` on inputs); `loaders.py` (`InputError`
+  + `_read_json` + validation via `TypeAdapter`); `writer.py`; `__main__.py`
+  wired end to end with a fake generator first.
 
 ### Phase 0 — scaffolding and environment *(done)*
-
-- Project laid out (`src/`, `data/input`, `data/output`, `llm_sdk/`) and the
-  `uv` environment wired up: `pyproject.toml`, `Makefile` and `.flake8` all on
-  `uv`; `uv.lock` committed.
-- `llm_sdk` installed as a local path dependency (see Design decisions).
-- Smoke test confirmed the model loads and `get_logits_from_input_ids` returns
-  **151,936** logits (the full Qwen3 vocabulary). Throwaway smoke test then
-  removed; `src/__main__.py` left empty for the real entry point.
-  - *Why:* prove the environment and SDK are correctly connected before writing
-    any real logic.
+- `uv` project (`pyproject.toml`, `Makefile`, `.flake8`, committed `uv.lock`);
+  `llm_sdk` as a local path dependency; smoke test confirmed 151,936 logits.

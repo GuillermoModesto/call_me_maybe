@@ -57,7 +57,7 @@ class StringType:
 
 
 class ValueType(Protocol):
-    """Common interface of a value contraint"""
+    """Common interface of a value constraint"""
 
     def allowed_next_chars(self, value: str) -> set[str]: ...
 
