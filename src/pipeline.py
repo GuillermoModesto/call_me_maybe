@@ -20,7 +20,7 @@ def _name_prompt(user_prompt: str, names: list[str]) -> str:
 
 def _args_prompt(user_prompt: str, function: FunctionDefinition) -> str:
     """Prompt that primes the model to extract the arguments."""
-    return (
+    prompt: str = (
         "Extract the arguments for " + function.name
         + " (" + function.description + ").\n"
         "Copy values exactly and fully from the request.\n"
@@ -28,6 +28,7 @@ def _args_prompt(user_prompt: str, function: FunctionDefinition) -> str:
         "Request: " + user_prompt + "\n"
         "Arguments as JSON: "
     )
+    return prompt
 
 
 def process_prompt(

@@ -59,7 +59,7 @@ def generate_string(
     """Generate a string value allowing multi-char content tokens."""
     quote_id = vocab.text_to_id['"']
     allowed = vocab.string_content_ids | {quote_id}
-    value = ""
+    value: str = ""
     while len(value) < max_len:
         logits = model.get_logits_from_input_ids(token_ids)
         next_id = pick_allowed(logits, allowed)
