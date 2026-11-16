@@ -77,14 +77,12 @@ def generate_string(
     return value
 
 
-def _looping_period(value: str, max_period: int = 12, repeats: int = 4) -> int:
-    """Return the period of a repeated tail unit, or 0 if not looping."""
+def _looping_period(value: str, repeats: int = 3) -> int:
+    """Return the period of a tail unit repeated `repeats` times, or 0."""
     n = len(value)
-    for period in range(1, max_period + 1):
-        if n >= period * repeats:
-            unit = value[-period:]
-            if value[-period * repeats:] == unit * repeats:
-                return period
+    for period in range(1, n // repeats + 1):
+        if value[-period * repeats:] == value[-period:] * repeats:
+            return period
     return 0
 
 
