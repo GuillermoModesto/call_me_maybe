@@ -3,7 +3,7 @@ for Qwen's BPE"""
 
 import json
 from pathlib import Path
-from .value_types import STRING_CHARS
+import unicodedata
 
 
 def bytes_to_unicode() -> dict[int, str]:
@@ -24,6 +24,18 @@ def bytes_to_unicode() -> dict[int, str]:
     return {b: chr(c) for b, c in zip(bs, cs)}
 
 
+def _is_string_content(text: str) -> bool:
+    """True if `text` can appear inside a JSON string value unescaped."""
+    if not text:
+        return False
+    for ch in text:
+        if ch in '"\\' or ch == "\ufffd":
+            return False
+        if unicodedata.category(ch).startswith("C"):  # control chars
+            return False
+    return True
+
+
 class Vocabulary:
     """Holds the token/id maps and decodes token to real text"""
 
@@ -42,7 +54,7 @@ class Vocabulary:
         for token_id in self.id_to_token:
             text = self.token_text(token_id)
             self.text_to_id[text] = token_id
-            if text and all(ch in STRING_CHARS for ch in text):
+            if _is_string_content(text):
                 self.string_content_ids.add(token_id)
 
     def token_text(self, token_id: int) -> str:

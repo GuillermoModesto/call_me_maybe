@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Constrained function calling.")
     parser.add_argument(
-        "--functions",
+        "--functions_definition",
         type=Path,
         default=Path("data/input/functions_definition.json"),
         help="Path to the function definitions JSON file.",
@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/output/function_calling_results.json"),
+        default=Path("data/output/function_calls.json"),
         help="Path where the results JSON will be written.",
     )
     return parser.parse_args()
@@ -43,7 +43,7 @@ def main() -> None:
     """Orchestrate the full input -> process -> output flow."""
     args = parse_args()
     try:
-        functions = load_function_definitions(args.functions)
+        functions = load_function_definitions(args.functions_definition)
         prompts = load_prompts(args.input)
     except InputError as exc:
         print(exc)
